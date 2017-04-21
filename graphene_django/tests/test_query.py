@@ -545,3 +545,35 @@ def test_should_error_if_first_is_greater_than_max():
     assert result.data == expected
 
     graphene_settings.RELAY_CONNECTION_ENFORCE_FIRST_OR_LAST = False
+
+
+def test_should_handle_inherited_choices():
+    class BaseModel(models.Model):
+        choice_field = models.IntegerField(choices=((0, 'zero'), (1, 'one')))
+
+    class ChildModel(BaseModel):
+        class Meta:
+            proxy = True
+
+    class BaseType(DjangoObjectType):
+        class Meta:
+            model = BaseModel
+
+    class ChildType(DjangoObjectType):
+        class Meta:
+            model = ChildModel
+
+    class Query(graphene.ObjectType):
+        base = graphene.Field(BaseType)
+        child = graphene.Field(ChildType)
+
+    schema = graphene.Schema(query=Query)
+    query = '''
+        query {
+          child {
+            choiceField
+          }
+        }
+    '''
+    result = schema.execute(query)
+    assert not result.errors
