@@ -5,6 +5,8 @@ from django.db import models
 from django.utils.functional import SimpleLazyObject
 from py.test import raises
 
+from django.db.models import Q
+
 import graphene
 from graphene.relay import Node
 
@@ -13,7 +15,7 @@ from ..compat import MissingType, JSONField
 from ..fields import DjangoConnectionField
 from ..types import DjangoObjectType
 from ..settings import graphene_settings
-from .models import Article, Reporter
+from .models import Article, Reporter, Film, FilmDetails
 
 pytestmark = pytest.mark.django_db
 
@@ -363,6 +365,61 @@ def test_should_query_node_filtering():
 
     result = schema.execute(query)
     assert not result.errors
+    assert result.data == expected
+
+
+@pytest.mark.skipif(not DJANGO_FILTER_INSTALLED,
+                    reason="django-filter should be installed")
+def test_should_query_node_filtering_with_distinct_queryset():
+    class FilmType(DjangoObjectType):
+
+        class Meta:
+            model = Film
+            interfaces = (Node, )
+            filter_fields = ('genre',)
+
+    class Query(graphene.ObjectType):
+        films = DjangoConnectionField(FilmType)
+
+        # def resolve_all_reporters_with_berlin_films(self, args, context, info):
+        #    return Reporter.objects.filter(Q(films__film__location__contains="Berlin") | Q(a_choice=1))
+
+        def resolve_films(self, args, context, info):
+            return Film.objects.filter(Q(details__location__contains="Berlin") | Q(genre__in=['ot'])).distinct()
+
+    f = Film.objects.create(
+    )
+    fd = FilmDetails.objects.create(
+        location="Berlin",
+        film=f
+    )
+
+    schema = graphene.Schema(query=Query)
+    query = '''
+        query NodeFilteringQuery {
+            films {
+                edges {
+                    node {
+                        genre
+                    }
+                }
+            }
+        }
+    '''
+
+    expected = {
+        'films': {
+            'edges': [{
+                'node': {
+                    'genre': 'ot'
+                }
+            }]
+        }
+    }
+
+    result = schema.execute(query)
+    assert not result.errors
+    print(result.data)
     assert result.data == expected
 
 
